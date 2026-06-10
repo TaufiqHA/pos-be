@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
-    "build": "prisma generate && prisma migrate deploy",
+    "build": "prisma generate && prisma migrate deploy && prisma db seed",
     "postinstall": "prisma generate",
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon src/index.js"
@@ -27,5 +27,8 @@
   "devDependencies": {
     "nodemon": "^3.1.14",
     "prisma": "^7.8.0"
+  },
+  "prisma": {
+    "seed": "node seed.js"
   }
 }
