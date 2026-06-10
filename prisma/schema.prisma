@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   // 'Admin', 'Cabang', 'Sales', 'Kurir', 'Cust', 'Outlet'
+  status    String   @default("Aktif") // 'Aktif', 'Nonaktif'
+  branchId   String?
+  outletName String?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  parentId  String?
+  parent    User?    @relation("UserHierarchy", fields: [parentId], references: [id])
+  children  User[]   @relation("UserHierarchy")
+  sales     Sale[]
+  purchases Purchase[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Branch {
+  id           String   @id @default(uuid())
+  name         String
+  address      String
+  phone        String
+  wilayah      String?
+  users        User[]
+  sales        Sale[]
+  purchases    Purchase[]
+  deliveries   Delivery[]
+  stockHistory StockHistory[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String
+  address   String
+  notes     String?
+  wilayah   String?
+  cabang    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Supplier {
+  id          String   @id @default(uuid())
+  name        String
+  contactName String
+  phone       String
+  address     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Unit {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id            String   @id @default(uuid())
+  sku           String   @unique
+  name          String
+  category      String
+  buyPrice      Float
+  sellPrice     Float
+  stock         Int      @default(0)
+  minStock      Int      @default(0)
+  unit          String
+  isWholesale   Boolean  @default(false)
+  
+  saleItems     SaleItem[]
+  purchaseItems PurchaseItem[]
+  stockHistory  StockHistory[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Sale {
+  id          String   @id @default(uuid())
+  invoice     String   @unique
+  date        DateTime @default(now())
+  customer    String
+  salesName   String
+  total       Float
+  discount    Float    @default(0)
+  grandTotal  Float
+  method      String   // 'Tunai', 'Transfer', 'Kredit'
+  status      String   // 'Lunas', 'Belum Bayar', 'Sebagian'
+  paymentRef  String?
+  notes       String?
+  cashGiven   Float?   @default(0)
+  cashReturn  Float?   @default(0)
+  
+  branchId    String?
+  branch      Branch?  @relation(fields: [branchId], references: [id])
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  
+  items       SaleItem[]
+  deliveries  Delivery[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SaleItem {
+  id        String   @id @default(uuid())
+  saleId    String
+  sale      Sale     @relation(fields: [saleId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  name      String   // Denormalisasi nama produk
+  qty       Int
+  price     Float
+  subtotal  Float
+}
+
+model Purchase {
+  id          String   @id @default(uuid())
+  invoice     String   @unique
+  date        DateTime @default(now())
+  supplier    String
+  total       Float
+  method      String   // 'Tunai', 'Transfer', 'Kredit'
+  status      String   // 'Lunas', 'Belum Bayar', 'Sebagian'
+  notes       String?
+  cashGiven   Float?   @default(0)
+  destinationAdminId String?
+  isProcessed Boolean  @default(false)
+  
+  branchId    String?
+  branch      Branch?  @relation(fields: [branchId], references: [id])
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  
+  items       PurchaseItem[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PurchaseItem {
+  id         String   @id @default(uuid())
+  purchaseId String
+  purchase   Purchase @relation(fields: [purchaseId], references: [id])
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  name       String
+  qty        Int
+  price      Float
+  subtotal   Float
+}
+
+model Delivery {
+  id           String   @id @default(uuid())
+  saleId       String
+  sale         Sale     @relation(fields: [saleId], references: [id])
+  invoice      String
+  date         DateTime @default(now())
+  customerName String
+  address      String
+  courier      String?
+  status       String   // 'Menunggu', 'Dikirim', 'Selesai'
+  notes        String?
+  
+  branchId     String?
+  branch       Branch?  @relation(fields: [branchId], references: [id])
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model StockHistory {
+  id          String   @id @default(uuid())
+  date        DateTime @default(now())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  productName String
+  type        String   // 'Tambah', 'Kurang'
+  qty         Int
+  prevStock   Int
+  newStock    Int
+  reason      String
+  userName    String
+  
+  branchId    String?
+  branch      Branch?  @relation(fields: [branchId], references: [id])
+  
+  createdAt   DateTime @default(now())
+}
