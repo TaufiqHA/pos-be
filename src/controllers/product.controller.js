@@ -21,7 +21,10 @@ const createProduct = async (req, res) => {
         data: {
           ...productData,
           wholesalePrices: {
-            create: wholesalePrices || []
+            create: wholesalePrices ? wholesalePrices.map(item => ({
+              qty: parseInt(item.qty, 10),
+              price: parseFloat(item.price)
+            })) : []
           }
         }
       });
@@ -65,7 +68,10 @@ const updateProduct = async (req, res) => {
         ...productData,
         wholesalePrices: {
           deleteMany: {},
-          create: wholesalePrices || []
+          create: wholesalePrices ? wholesalePrices.map(item => ({
+            qty: parseInt(item.qty, 10),
+            price: parseFloat(item.price)
+          })) : []
         }
       },
       include: { wholesalePrices: true }
