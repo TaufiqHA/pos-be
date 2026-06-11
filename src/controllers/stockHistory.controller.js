@@ -3,7 +3,7 @@ const prisma = require('../prisma');
 const getStockHistory = async (req, res) => {
   try {
     const data = await prisma.stockHistory.findMany({
-      orderBy: { date: 'desc' }
+      orderBy: { createdAt: 'desc' }
     });
     res.json(data);
   } catch (error) {

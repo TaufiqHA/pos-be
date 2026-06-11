@@ -3,7 +3,8 @@ const prisma = require('../prisma');
 const getProducts = async (req, res) => {
   try {
     const data = await prisma.product.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: { wholesalePrices: true }
     });
     res.json(data);
   } catch (error) {
@@ -13,8 +14,17 @@ const getProducts = async (req, res) => {
 
 const createProduct = async (req, res) => {
   try {
+    const { wholesalePrices, ...productData } = req.body;
+    
     const result = await prisma.$transaction(async (tx) => {
-      const product = await tx.product.create({ data: req.body });
+      const product = await tx.product.create({ 
+        data: {
+          ...productData,
+          wholesalePrices: {
+            create: wholesalePrices || []
+          }
+        }
+      });
       
       if (product.stock > 0) {
         await tx.stockHistory.create({
@@ -33,7 +43,12 @@ const createProduct = async (req, res) => {
       }
       return product;
     });
-    res.json(result);
+    
+    const finalProduct = await prisma.product.findUnique({
+      where: { id: result.id },
+      include: { wholesalePrices: true }
+    });
+    res.json(finalProduct);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -41,11 +56,19 @@ const createProduct = async (req, res) => {
 
 const updateProduct = async (req, res) => {
   try {
-    // Note: Do not update stock directly here if not logging to history.
-    // Assuming req.body doesn't contain manual stock update.
+    const { wholesalePrices, ...productData } = req.body;
+    const productId = req.params.id;
+
     const data = await prisma.product.update({
-      where: { id: req.params.id },
-      data: req.body
+      where: { id: productId },
+      data: {
+        ...productData,
+        wholesalePrices: {
+          deleteMany: {},
+          create: wholesalePrices || []
+        }
+      },
+      include: { wholesalePrices: true }
     });
     res.json(data);
   } catch (error) {
@@ -75,7 +98,8 @@ const adjustStock = async (req, res) => {
 
       const updatedProduct = await tx.product.update({
         where: { id: productId },
-        data: { stock: newStock }
+        data: { stock: newStock },
+        include: { wholesalePrices: true }
       });
 
       const user = await tx.user.findUnique({ where: { id: req.user.id } });
