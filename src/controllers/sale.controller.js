@@ -42,7 +42,8 @@ const createSale = async (req, res) => {
               name: item.name,
               qty: item.qty,
               price: item.price,
-              subtotal: item.subtotal
+              subtotal: item.subtotal,
+              isWholesalePrice: item.isWholesalePrice || false
             }))
           }
         }
@@ -77,13 +78,9 @@ const createSale = async (req, res) => {
       }
 
       // 4. Create Delivery
-      const customerObj = await tx.customer.findFirst({ where: { name: saleData.customer } });
       await tx.delivery.create({
         data: {
           saleId: sale.id,
-          invoice: sale.invoice,
-          customerName: saleData.customer,
-          address: customerObj?.address || '-',
           status: 'Menunggu',
           branchId
         }
