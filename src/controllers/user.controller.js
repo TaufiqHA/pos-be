@@ -12,8 +12,8 @@ const getUsers = async (req, res) => {
 
 const createUser = async (req, res) => {
   try {
-    // Ekstrak branchId dari req.body
-    const { password, branchId, ...rest } = req.body;
+    // Ekstrak branchId dan parentId dari req.body
+    const { password, branchId, parentId, ...rest } = req.body;
     const hashedPassword = await bcrypt.hash(password || '123456', 10);
     
     const createData = { ...rest, password: hashedPassword };
@@ -21,6 +21,11 @@ const createUser = async (req, res) => {
     // Format relasi branch sesuai aturan Prisma
     if (branchId) {
       createData.branch = { connect: { id: branchId } };
+    }
+
+    // Format relasi parent
+    if (parentId) {
+      createData.parent = { connect: { id: parentId } };
     }
 
     const user = await prisma.user.create({
@@ -36,8 +41,8 @@ const createUser = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    // PENTING: Ekstrak branchId dari req.body agar tidak masuk ke rest
-    const { password, branchId, ...rest } = req.body;
+    // PENTING: Ekstrak branchId dan parentId dari req.body agar tidak masuk ke rest
+    const { password, branchId, parentId, ...rest } = req.body;
     const updateData = { ...rest };
     
     // 1. Hash password jika ada
@@ -51,6 +56,15 @@ const updateUser = async (req, res) => {
         updateData.branch = { disconnect: true };
       } else {
         updateData.branch = { connect: { id: branchId } };
+      }
+    }
+
+    // 3. Perbaikan Relasi Parent
+    if (parentId !== undefined) {
+      if (parentId === null || parentId === "") {
+        updateData.parent = { disconnect: true };
+      } else {
+        updateData.parent = { connect: { id: parentId } };
       }
     }
 

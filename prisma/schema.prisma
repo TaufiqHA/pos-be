@@ -207,5 +207,12 @@ model StockHistory {
   branchId    String?
   branch      Branch?  @relation(fields: [branchId], references: [id])
   
-  createdAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+}
+
+model Wilayah {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

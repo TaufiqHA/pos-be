@@ -15,6 +15,7 @@ const purchaseRoutes = require('./routes/purchase.routes');
 const deliveryRoutes = require('./routes/delivery.routes');
 const stockHistoryRoutes = require('./routes/stockHistory.routes');
 const userOutletRoutes = require('./routes/userOutlet.routes');
+const wilayahRoutes = require('./routes/wilayah.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,6 +37,7 @@ app.use('/api/purchases', purchaseRoutes);
 app.use('/api/deliveries', deliveryRoutes);
 app.use('/api/stock-history', stockHistoryRoutes);
 app.use('/api/user-outlets', userOutletRoutes);
+app.use('/api/wilayahs', wilayahRoutes);
 
 app.get('/', (req, res) => {
   res.send('POS Backend is running!');

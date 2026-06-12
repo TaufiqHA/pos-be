@@ -83,6 +83,13 @@ async function main() {
     create: { name: 'Kg' }
   });
 
+  // Seed Wilayah
+  const wilayahJKTPusat = await prisma.wilayah.upsert({
+    where: { name: 'Jakarta Pusat' },
+    update: {},
+    create: { name: 'Jakarta Pusat' }
+  });
+
   // 5. Seed Supplier
   const supplier = await prisma.supplier.upsert({
     where: { id: 'sup-1' },
@@ -144,6 +151,7 @@ async function main() {
   });
 
   console.log('Seeding Semua Data Master Selesai!');
+  console.log('- Wilayah:', wilayahJKTPusat.name);
   console.log('- Cabang:', branch1.name);
   console.log('- Users:', { admin: admin.email, cabang: cabang.email, outlet: outlet.email });
   console.log('- Kategori & Satuan:', [category1.name, category2.name], [unit1.name, unit2.name]);

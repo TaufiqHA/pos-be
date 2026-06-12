@@ -3,7 +3,7 @@ const prisma = require('../prisma');
 const getPurchases = async (req, res) => {
   try {
     const data = await prisma.purchase.findMany({
-      include: { items: true },
+      include: { items: true, user: true },
       orderBy: { createdAt: 'desc' }
     });
     res.json(data);
@@ -30,12 +30,16 @@ const createPurchase = async (req, res) => {
       const generatedInvoice = `PO-${dateStr}-${urutan}`;
 
       // 1. Create Purchase
+      // Jika role adalah Admin, maka langsung anggap sudah diproses (isProcessed: true)
+      const isProcessedAdmin = user.role === 'Admin' || user.role === 'Admin Pusat';
+      
       const purchase = await tx.purchase.create({
         data: {
           ...purchaseData,
           invoice: generatedInvoice,
           userId,
           branchId,
+          isProcessed: isProcessedAdmin,
           items: {
             create: items.map(item => ({
               productId: item.productId,
@@ -48,32 +52,34 @@ const createPurchase = async (req, res) => {
         }
       });
 
-      // 2 & 3. Add Stock and create StockHistory
-      for (const item of items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product) throw new Error(`Product ${item.productId} not found`);
+      // 2 & 3. Add Stock and create StockHistory HANYA jika langsung diproses (Admin)
+      if (isProcessedAdmin) {
+        for (const item of items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product) throw new Error(`Product ${item.productId} not found`);
 
-        const prevStock = product.stock;
-        const newStock = prevStock + item.qty;
+          const prevStock = product.stock;
+          const newStock = prevStock + item.qty;
 
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: newStock }
-        });
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: newStock }
+          });
 
-        await tx.stockHistory.create({
-          data: {
-            productId: product.id,
-            productName: product.name,
-            type: 'Tambah',
-            qty: item.qty,
-            prevStock,
-            newStock,
-            reason: `Pembelian ${purchase.invoice}`,
-            userName: user?.name || 'System',
-            branchId
-          }
-        });
+          await tx.stockHistory.create({
+            data: {
+              productId: product.id,
+              productName: product.name,
+              type: 'Tambah',
+              qty: item.qty,
+              prevStock,
+              newStock,
+              reason: `Pembelian ${purchase.invoice}`,
+              userName: user?.name || 'System',
+              branchId: user?.branchId || null
+            }
+          });
+        }
       }
 
       return purchase;
@@ -114,11 +120,54 @@ const payPurchase = async (req, res) => {
 const processPurchase = async (req, res) => {
   try {
     const { id } = req.params;
-    const updatedPurchase = await prisma.purchase.update({
-      where: { id },
-      data: { isProcessed: true }
+    
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Cek purchase
+      const purchase = await tx.purchase.findUnique({
+        where: { id },
+        include: { items: true }
+      });
+      
+      if (!purchase) throw new Error('Purchase not found');
+      if (purchase.isProcessed) throw new Error('PO sudah pernah diproses');
+
+      // 2. Set isProcessed menjadi true
+      const updatedPurchase = await tx.purchase.update({
+        where: { id },
+        data: { isProcessed: true }
+      });
+
+      // 3. Eksekusi penambahan stok karena sudah di-acc
+      for (const item of purchase.items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        
+        const prevStock = product.stock;
+        const newStock = prevStock + item.qty;
+
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: newStock }
+        });
+
+        await tx.stockHistory.create({
+          data: {
+            productId: product.id,
+            productName: product.name,
+            type: 'Tambah',
+            qty: item.qty,
+            prevStock,
+            newStock,
+            reason: `PO Disetujui: ${purchase.invoice}`,
+            userName: req.user?.name || 'Admin Sistem',
+            branchId: purchase.branchId // <-- Stok masuk ke cabang yang me-request
+          }
+        });
+      }
+      
+      return updatedPurchase;
     });
-    res.json(updatedPurchase);
+
+    res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
