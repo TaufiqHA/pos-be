@@ -88,12 +88,22 @@ model Product {
   unit          String
   isWholesale   Boolean  @default(false)
   
+  wholesalePrices WholesalePrice[]
+  
   saleItems     SaleItem[]
   purchaseItems PurchaseItem[]
   stockHistory  StockHistory[]
   
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model WholesalePrice {
+  id        String  @id @default(uuid())
+  productId String
+  qty       Int
+  price     Float
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model Sale {
@@ -166,34 +176,29 @@ model PurchaseItem {
   purchase   Purchase @relation(fields: [purchaseId], references: [id])
   productId  String
   product    Product  @relation(fields: [productId], references: [id])
-  name       String
+  name       String   // Denormalisasi nama produk
   qty        Int
   price      Float
   subtotal   Float
 }
 
 model Delivery {
-  id           String   @id @default(uuid())
-  saleId       String
-  sale         Sale     @relation(fields: [saleId], references: [id])
-  invoice      String
-  date         DateTime @default(now())
-  customerName String
-  address      String
-  courier      String?
-  status       String   // 'Menunggu', 'Dikirim', 'Selesai'
-  notes        String?
-  
-  branchId     String?
-  branch       Branch?  @relation(fields: [branchId], references: [id])
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(uuid())
+  saleId      String
+  sale        Sale     @relation(fields: [saleId], references: [id])
+  branchId    String?
+  branch      Branch?  @relation(fields: [branchId], references: [id])
+  status      String   // 'Diproses', 'Dikirim', 'Terkirim', 'Diterima'
+  driverName  String?
+  notes       String?
+  sentAt      DateTime?
+  receivedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model StockHistory {
   id          String   @id @default(uuid())
-  date        DateTime @default(now())
   productId   String
   product     Product  @relation(fields: [productId], references: [id])
   productName String
@@ -203,11 +208,9 @@ model StockHistory {
   newStock    Int
   reason      String
   userName    String
-  
   branchId    String?
   branch      Branch?  @relation(fields: [branchId], references: [id])
-  
-  createdAt    DateTime @default(now())
+  createdAt   DateTime @default(now())
 }
 
 model Wilayah {
