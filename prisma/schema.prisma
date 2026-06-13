@@ -87,6 +87,7 @@ model Product {
   minStock      Int      @default(0)
   unit          String
   isWholesale   Boolean  @default(false)
+  branchPrices  Json?
   
   wholesalePrices WholesalePrice[]
   
