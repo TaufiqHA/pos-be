@@ -87,6 +87,9 @@ const createSale = async (req, res) => {
       });
 
       return sale;
+    }, {
+      maxWait: 5000,
+      timeout: 20000
     });
 
     res.json(result);
@@ -113,6 +116,9 @@ const paySale = async (req, res) => {
         data: { cashGiven: newPaid, status }
       });
       return updatedSale;
+    }, {
+      maxWait: 5000,
+      timeout: 20000
     });
 
     res.json(result);

@@ -11,7 +11,10 @@ const getCustomers = async (req, res) => {
 
 const createCustomer = async (req, res) => {
   try {
-    const data = await prisma.customer.create({ data: req.body });
+    const { name, phone, address, notes, wilayah, cabang } = req.body;
+    const data = await prisma.customer.create({
+      data: { name, phone, address, notes, wilayah, cabang }
+    });
     res.json(data);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -20,9 +23,10 @@ const createCustomer = async (req, res) => {
 
 const updateCustomer = async (req, res) => {
   try {
+    const { name, phone, address, notes, wilayah, cabang } = req.body;
     const data = await prisma.customer.update({
       where: { id: req.params.id },
-      data: req.body
+      data: { name, phone, address, notes, wilayah, cabang }
     });
     res.json(data);
   } catch (error) {

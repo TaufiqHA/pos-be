@@ -3,9 +3,24 @@ const prisma = require('../prisma');
 const getProducts = async (req, res) => {
   try {
     const user = req.user;
+    const branchIdFilter = req.query.branch_id;
     
+    let whereClause = {};
+    if (branchIdFilter) {
+      whereClause = {
+        purchaseItems: {
+          some: {
+            purchase: {
+              branchId: branchIdFilter
+            }
+          }
+        }
+      };
+    }
+
     // Ambil data produk. Jika user = Cabang, ambil juga StockHistory milik cabang tersebut.
     let data = await prisma.product.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       include: {
         wholesalePrices: true,
@@ -73,6 +88,9 @@ const createProduct = async (req, res) => {
         });
       }
       return product;
+    }, {
+      maxWait: 5000,
+      timeout: 20000
     });
     
     const finalProduct = await prisma.product.findUnique({
@@ -155,6 +173,9 @@ const adjustStock = async (req, res) => {
       });
 
       return updatedProduct;
+    }, {
+      maxWait: 5000,
+      timeout: 20000
     });
 
     res.json(result);

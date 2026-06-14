@@ -83,6 +83,9 @@ const createPurchase = async (req, res) => {
       }
 
       return purchase;
+    }, {
+      maxWait: 5000,
+      timeout: 20000
     });
 
     res.json(result);
@@ -109,6 +112,9 @@ const payPurchase = async (req, res) => {
         data: { cashGiven: newPaid, status }
       });
       return updatedPurchase;
+    }, {
+      maxWait: 5000,
+      timeout: 20000
     });
 
     res.json(result);
@@ -165,6 +171,9 @@ const processPurchase = async (req, res) => {
       }
       
       return updatedPurchase;
+    }, {
+      maxWait: 5000,
+      timeout: 20000
     });
 
     res.json(result);
