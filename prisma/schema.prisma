@@ -161,6 +161,7 @@ model Purchase {
   cashGiven   Float?   @default(0)
   destinationAdminId String?
   isProcessed Boolean  @default(false)
+  deliveryStatus String @default("Menunggu")
   
   branchId    String?
   branch      Branch?  @relation(fields: [branchId], references: [id])

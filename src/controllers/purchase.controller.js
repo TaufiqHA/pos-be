@@ -38,8 +38,8 @@ const createPurchase = async (req, res) => {
           ...purchaseData,
           invoice: generatedInvoice,
           userId,
-          branchId,
-          isProcessed: isProcessedAdmin,
+          branchId: purchaseData.branchId || branchId, // Gunakan branchId dari payload jika ada (Push System)
+          isProcessed: purchaseData.isProcessed !== undefined ? purchaseData.isProcessed : isProcessedAdmin,
           items: {
             create: items.map(item => ({
               productId: item.productId,
@@ -52,35 +52,8 @@ const createPurchase = async (req, res) => {
         }
       });
 
-      // 2 & 3. Add Stock and create StockHistory HANYA jika langsung diproses (Admin)
-      if (isProcessedAdmin) {
-        for (const item of items) {
-          const product = await tx.product.findUnique({ where: { id: item.productId } });
-          if (!product) throw new Error(`Product ${item.productId} not found`);
-
-          const prevStock = product.stock;
-          const newStock = prevStock + item.qty;
-
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: newStock }
-          });
-
-          await tx.stockHistory.create({
-            data: {
-              productId: product.id,
-              productName: product.name,
-              type: 'Tambah',
-              qty: item.qty,
-              prevStock,
-              newStock,
-              reason: `Pembelian ${purchase.invoice}`,
-              userName: user?.name || 'System',
-              branchId: user?.branchId || null
-            }
-          });
-        }
-      }
+      // Penambahan stok tidak dilakukan di sini.
+      // Stok baru akan ditambahkan ketika Cabang menekan "Terima & Cek" (status menjadi Selesai).
 
       return purchase;
     }, {
@@ -143,32 +116,8 @@ const processPurchase = async (req, res) => {
         data: { isProcessed: true }
       });
 
-      // 3. Eksekusi penambahan stok karena sudah di-acc
-      for (const item of purchase.items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        
-        const prevStock = product.stock;
-        const newStock = prevStock + item.qty;
-
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: newStock }
-        });
-
-        await tx.stockHistory.create({
-          data: {
-            productId: product.id,
-            productName: product.name,
-            type: 'Tambah',
-            qty: item.qty,
-            prevStock,
-            newStock,
-            reason: `PO Disetujui: ${purchase.invoice}`,
-            userName: req.user?.name || 'Admin Sistem',
-            branchId: purchase.branchId // <-- Stok masuk ke cabang yang me-request
-          }
-        });
-      }
+      // Penambahan stok tidak dilakukan di sini.
+      // Stok baru akan ditambahkan ketika Cabang menekan "Terima & Cek" (status menjadi Selesai).
       
       return updatedPurchase;
     }, {
@@ -198,4 +147,67 @@ const cancelPurchase = async (req, res) => {
   }
 };
 
-module.exports = { getPurchases, createPurchase, payPurchase, processPurchase, cancelPurchase };
+const updatePurchase = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { deliveryStatus, status, cashGiven, isProcessed } = req.body;
+    
+    const dataToUpdate = {};
+    if (deliveryStatus !== undefined) dataToUpdate.deliveryStatus = deliveryStatus;
+    if (status !== undefined) dataToUpdate.status = status;
+    if (cashGiven !== undefined) dataToUpdate.cashGiven = cashGiven;
+    if (isProcessed !== undefined) dataToUpdate.isProcessed = isProcessed;
+
+    const updatedPurchase = await prisma.$transaction(async (tx) => {
+      const existingPurchase = await tx.purchase.findUnique({
+        where: { id },
+        include: { items: true }
+      });
+
+      if (!existingPurchase) throw new Error('Purchase not found');
+
+      // Jika status BERUBAH menjadi 'Selesai' (Cabang sudah Terima & Cek)
+      if (status === 'Selesai' && existingPurchase.status !== 'Selesai') {
+        for (const item of existingPurchase.items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product) throw new Error(`Product ${item.productId} not found`);
+
+          const newStock = product.stock + item.qty;
+
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: newStock }
+          });
+
+          await tx.stockHistory.create({
+            data: {
+              productId: product.id,
+              productName: product.name,
+              type: 'Tambah',
+              qty: item.qty,
+              prevStock: product.stock,
+              newStock,
+              reason: `Penerimaan PO: ${existingPurchase.invoice}`,
+              userName: req.user?.name || 'Cabang',
+              branchId: existingPurchase.branchId
+            }
+          });
+        }
+      }
+
+      return await tx.purchase.update({
+        where: { id },
+        data: dataToUpdate
+      });
+    });
+
+    res.json(updatedPurchase);
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ message: 'Purchase not found' });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { getPurchases, createPurchase, payPurchase, processPurchase, cancelPurchase, updatePurchase };
