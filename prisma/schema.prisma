@@ -89,6 +89,8 @@ model Product {
   unit          String
   isWholesale   Boolean  @default(false)
   branchPrices  Json?
+  branchIsWholesale     Json?
+  branchWholesalePrices Json?
   
   wholesalePrices WholesalePrice[]
   
@@ -158,7 +160,9 @@ model Purchase {
   method      String   // 'Tunai', 'Transfer', 'Kredit'
   status      String   // 'Lunas', 'Belum Bayar', 'Sebagian'
   notes       String?
-  cashGiven   Float?   @default(0)
+  cashGiven          Float?   @default(0)
+  pendingPayment     Float?   @default(0)
+  paymentStatus      String?
   destinationAdminId String?
   isProcessed Boolean  @default(false)
   deliveryStatus String @default("Menunggu")

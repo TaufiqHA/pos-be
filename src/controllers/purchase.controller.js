@@ -70,20 +70,66 @@ const createPurchase = async (req, res) => {
 const payPurchase = async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount } = req.body;
+    const { amount, isPending } = req.body;
 
     const result = await prisma.$transaction(async (tx) => {
-      const purchase = await tx.purchase.findUnique({ where: { id } });
+      const purchase = await tx.purchase.findUnique({ where: { id }, include: { items: true } });
       if (!purchase) throw new Error('Purchase not found');
 
+      if (isPending) {
+        return await tx.purchase.update({
+          where: { id },
+          data: { 
+            pendingPayment: amount,
+            paymentStatus: 'Menunggu Konfirmasi'
+          }
+        });
+      }
+
+      // Confirm payment (Admin Pusat)
+      const paymentToAdd = purchase.pendingPayment && purchase.pendingPayment > 0 ? purchase.pendingPayment : amount;
       const currentPaid = purchase.cashGiven || 0;
-      const newPaid = currentPaid + amount;
+      const newPaid = currentPaid + paymentToAdd;
       const status = newPaid >= purchase.total ? 'Lunas' : 'Sebagian';
 
       const updatedPurchase = await tx.purchase.update({
         where: { id },
-        data: { cashGiven: newPaid, status }
+        data: { 
+          cashGiven: newPaid, 
+          status,
+          pendingPayment: 0,
+          paymentStatus: 'Diterima'
+        }
       });
+
+      if (status === 'Lunas' && purchase.status !== 'Lunas' && purchase.supplier !== 'Kantor Pusat') {
+        for (const item of purchase.items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product) continue;
+
+          const newStock = product.stock + item.qty;
+
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: newStock }
+          });
+
+          await tx.stockHistory.create({
+            data: {
+              productId: product.id,
+              productName: product.name,
+              type: 'Tambah',
+              qty: item.qty,
+              prevStock: product.stock,
+              newStock,
+              reason: `Pembayaran PO Lunas: ${purchase.invoice}`,
+              userName: req.user?.name || 'System',
+              branchId: purchase.branchId
+            }
+          });
+        }
+      }
+
       return updatedPurchase;
     }, {
       maxWait: 5000,
@@ -189,6 +235,35 @@ const updatePurchase = async (req, res) => {
               newStock,
               reason: `Penerimaan PO: ${existingPurchase.invoice}`,
               userName: req.user?.name || 'Cabang',
+              branchId: existingPurchase.branchId
+            }
+          });
+        }
+      }
+
+      // Jika status BERUBAH menjadi 'Lunas' untuk supplier eksternal
+      if (status === 'Lunas' && existingPurchase.status !== 'Lunas' && existingPurchase.supplier !== 'Kantor Pusat') {
+        for (const item of existingPurchase.items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product) continue;
+
+          const newStock = product.stock + item.qty;
+
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: newStock }
+          });
+
+          await tx.stockHistory.create({
+            data: {
+              productId: product.id,
+              productName: product.name,
+              type: 'Tambah',
+              qty: item.qty,
+              prevStock: product.stock,
+              newStock,
+              reason: `PO Lunas: ${existingPurchase.invoice}`,
+              userName: req.user?.name || 'System',
               branchId: existingPurchase.branchId
             }
           });
