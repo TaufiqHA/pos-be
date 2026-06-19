@@ -29,6 +29,13 @@ const createSale = async (req, res) => {
       const urutan = String(totalSales + 1).padStart(4, '0');
       const generatedInvoice = `INV-${dateStr}-${urutan}`;
 
+      const productIds = items.map(item => item.productId);
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } }
+      });
+      const productMap = {};
+      products.forEach(p => productMap[p.id] = p);
+
       // 1. Create Sale
       const sale = await tx.sale.create({
         data: {
@@ -43,7 +50,8 @@ const createSale = async (req, res) => {
               qty: item.qty,
               price: item.price,
               subtotal: item.subtotal,
-              isWholesalePrice: item.isWholesalePrice || false
+              isWholesalePrice: item.isWholesalePrice || false,
+              cogs: productMap[item.productId]?.averageCost ?? productMap[item.productId]?.buyPrice ?? 0
             }))
           }
         }

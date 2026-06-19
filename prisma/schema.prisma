@@ -84,6 +84,7 @@ model Product {
   category      String
   buyPrice      Float
   sellPrice     Float
+  averageCost   Float?   // Ditambahkan untuk Moving Average
   stock         Int      @default(0)
   minStock      Int      @default(0)
   unit          String
@@ -148,6 +149,7 @@ model SaleItem {
   qty       Int
   price     Float
   subtotal  Float
+  cogs      Float?   // Harga Pokok Penjualan rata-rata saat transaksi
   isWholesalePrice Boolean @default(false)
 }
 

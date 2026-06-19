@@ -107,11 +107,17 @@ const payPurchase = async (req, res) => {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) continue;
 
-          const newStock = product.stock + item.qty;
+          const prevStock = product.stock;
+          const newStock = prevStock + item.qty;
+          const oldAverageCost = product.averageCost ?? product.buyPrice;
+          let newAverageCost = oldAverageCost;
+          if (newStock > 0) {
+            newAverageCost = ((prevStock * oldAverageCost) + (item.qty * item.price)) / newStock;
+          }
 
           await tx.product.update({
             where: { id: item.productId },
-            data: { stock: newStock }
+            data: { stock: newStock, averageCost: newAverageCost }
           });
 
           await tx.stockHistory.create({
@@ -218,11 +224,17 @@ const updatePurchase = async (req, res) => {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) throw new Error(`Product ${item.productId} not found`);
 
-          const newStock = product.stock + item.qty;
+          const prevStock = product.stock;
+          const newStock = prevStock + item.qty;
+          const oldAverageCost = product.averageCost ?? product.buyPrice;
+          let newAverageCost = oldAverageCost;
+          if (newStock > 0) {
+            newAverageCost = ((prevStock * oldAverageCost) + (item.qty * item.price)) / newStock;
+          }
 
           await tx.product.update({
             where: { id: item.productId },
-            data: { stock: newStock }
+            data: { stock: newStock, averageCost: newAverageCost }
           });
 
           await tx.stockHistory.create({
@@ -247,11 +259,17 @@ const updatePurchase = async (req, res) => {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) continue;
 
-          const newStock = product.stock + item.qty;
+          const prevStock = product.stock;
+          const newStock = prevStock + item.qty;
+          const oldAverageCost = product.averageCost ?? product.buyPrice;
+          let newAverageCost = oldAverageCost;
+          if (newStock > 0) {
+            newAverageCost = ((prevStock * oldAverageCost) + (item.qty * item.price)) / newStock;
+          }
 
           await tx.product.update({
             where: { id: item.productId },
-            data: { stock: newStock }
+            data: { stock: newStock, averageCost: newAverageCost }
           });
 
           await tx.stockHistory.create({

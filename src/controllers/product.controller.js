@@ -63,6 +63,7 @@ const createProduct = async (req, res) => {
       const product = await tx.product.create({ 
         data: {
           ...productData,
+          averageCost: productData.buyPrice,
           wholesalePrices: {
             create: wholesalePrices ? wholesalePrices.map(item => ({
               qty: parseInt(item.qty, 10),
