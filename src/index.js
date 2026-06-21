@@ -16,12 +16,14 @@ const deliveryRoutes = require('./routes/delivery.routes');
 const stockHistoryRoutes = require('./routes/stockHistory.routes');
 const userOutletRoutes = require('./routes/userOutlet.routes');
 const wilayahRoutes = require('./routes/wilayah.routes');
+const settingRoutes = require('./routes/setting.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -38,6 +40,7 @@ app.use('/api/deliveries', deliveryRoutes);
 app.use('/api/stock-history', stockHistoryRoutes);
 app.use('/api/user-outlets', userOutletRoutes);
 app.use('/api/wilayahs', wilayahRoutes);
+app.use('/api/settings', settingRoutes);
 
 app.get('/', (req, res) => {
   res.send('POS Backend is running!');
