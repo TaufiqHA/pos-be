@@ -20,8 +20,23 @@ const createUnit = async (req, res) => {
 
 const updateUnit = async (req, res) => {
   try {
+    const identifier = req.params.id;
+
+    const existingUnit = await prisma.unit.findFirst({
+      where: {
+        OR: [
+          { id: identifier },
+          { name: identifier }
+        ]
+      }
+    });
+
+    if (!existingUnit) {
+      return res.status(404).json({ message: 'Unit not found' });
+    }
+
     const data = await prisma.unit.update({
-      where: { id: req.params.id },
+      where: { id: existingUnit.id },
       data: req.body
     });
     res.json(data);
@@ -32,7 +47,22 @@ const updateUnit = async (req, res) => {
 
 const deleteUnit = async (req, res) => {
   try {
-    await prisma.unit.delete({ where: { id: req.params.id } });
+    const identifier = req.params.id;
+
+    const existingUnit = await prisma.unit.findFirst({
+      where: {
+        OR: [
+          { id: identifier },
+          { name: identifier }
+        ]
+      }
+    });
+
+    if (!existingUnit) {
+      return res.status(404).json({ message: 'Unit not found' });
+    }
+
+    await prisma.unit.delete({ where: { id: existingUnit.id } });
     res.json({ message: 'Deleted' });
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -20,8 +20,23 @@ const createCategory = async (req, res) => {
 
 const updateCategory = async (req, res) => {
   try {
+    const identifier = req.params.id;
+
+    const existingCategory = await prisma.category.findFirst({
+      where: {
+        OR: [
+          { id: identifier },
+          { name: identifier }
+        ]
+      }
+    });
+
+    if (!existingCategory) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+
     const data = await prisma.category.update({
-      where: { id: req.params.id },
+      where: { id: existingCategory.id },
       data: req.body
     });
     res.json(data);
@@ -32,7 +47,22 @@ const updateCategory = async (req, res) => {
 
 const deleteCategory = async (req, res) => {
   try {
-    await prisma.category.delete({ where: { id: req.params.id } });
+    const identifier = req.params.id;
+
+    const existingCategory = await prisma.category.findFirst({
+      where: {
+        OR: [
+          { id: identifier },
+          { name: identifier }
+        ]
+      }
+    });
+
+    if (!existingCategory) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+
+    await prisma.category.delete({ where: { id: existingCategory.id } });
     res.json({ message: 'Deleted' });
   } catch (error) {
     res.status(500).json({ message: error.message });
