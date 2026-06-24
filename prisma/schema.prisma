@@ -160,6 +160,8 @@ model Purchase {
   date        DateTime @default(now())
   supplier    String
   total       Float
+  discount    Float?   @default(0)
+  grandTotal  Float?
   method      String   // 'Tunai', 'Transfer', 'Kredit'
   status      String   // 'Lunas', 'Belum Bayar', 'Sebagian'
   notes       String?
