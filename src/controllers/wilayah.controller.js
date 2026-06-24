@@ -18,4 +18,55 @@ const createWilayah = async (req, res) => {
   }
 };
 
-module.exports = { getWilayahs, createWilayah };
+const updateWilayah = async (req, res) => {
+  try {
+    const identifier = req.params.id;
+    const existing = await prisma.wilayah.findFirst({
+      where: {
+        OR: [
+          { id: identifier },
+          { name: identifier }
+        ]
+      }
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: 'Wilayah not found' });
+    }
+
+    const data = await prisma.wilayah.update({
+      where: { id: existing.id },
+      data: req.body
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const deleteWilayah = async (req, res) => {
+  try {
+    const identifier = req.params.id;
+    const existing = await prisma.wilayah.findFirst({
+      where: {
+        OR: [
+          { id: identifier },
+          { name: identifier }
+        ]
+      }
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: 'Wilayah not found' });
+    }
+
+    await prisma.wilayah.delete({
+      where: { id: existing.id }
+    });
+    res.json({ message: 'Wilayah deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { getWilayahs, createWilayah, updateWilayah, deleteWilayah };
