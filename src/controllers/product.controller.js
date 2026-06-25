@@ -44,7 +44,16 @@ const getProducts = async (req, res) => {
         const { stockHistory, ...productData } = p; // Buang history agar response API bersih
         return {
           ...productData,
+          centralStock: productData.stock,
           stock: branchStock // Ganti nilai stok global menjadi stok cabang
+        };
+      });
+    } else {
+      data = data.map(p => {
+        const { stockHistory, ...productData } = p;
+        return {
+          ...productData,
+          centralStock: productData.stock
         };
       });
     }
