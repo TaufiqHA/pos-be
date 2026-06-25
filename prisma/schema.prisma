@@ -31,6 +31,7 @@ model Branch {
   address      String
   phone        String
   wilayah      String?
+  notes        String?
   users        User[]
   sales        Sale[]
   purchases    Purchase[]
