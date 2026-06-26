@@ -24,9 +24,19 @@ const createSale = async (req, res) => {
       }
       const branchId = user?.branchId || null;
 
-      const totalSales = await tx.sale.count();
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const urutan = String(totalSales + 1).padStart(4, '0');
+      const prefix = `INV-${dateStr}-`;
+      const lastSale = await tx.sale.findFirst({
+        where: { invoice: { startsWith: prefix } },
+        orderBy: { invoice: 'desc' }
+      });
+      let nextNum = 1;
+      if (lastSale && lastSale.invoice) {
+        const lastParts = lastSale.invoice.split('-');
+        const lastSeq = parseInt(lastParts[lastParts.length - 1], 10);
+        if (!isNaN(lastSeq)) nextNum = lastSeq + 1;
+      }
+      const urutan = String(nextNum).padStart(4, '0');
       const generatedInvoice = `INV-${dateStr}-${urutan}`;
 
       const productIds = items.map(item => item.productId);

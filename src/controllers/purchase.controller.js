@@ -24,9 +24,19 @@ const createPurchase = async (req, res) => {
       }
       const branchId = user?.branchId || null;
 
-      const totalPurchases = await tx.purchase.count();
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const urutan = String(totalPurchases + 1).padStart(4, '0');
+      const prefix = `PO-${dateStr}-`;
+      const lastPurchase = await tx.purchase.findFirst({
+        where: { invoice: { startsWith: prefix } },
+        orderBy: { invoice: 'desc' }
+      });
+      let nextNum = 1;
+      if (lastPurchase && lastPurchase.invoice) {
+        const lastParts = lastPurchase.invoice.split('-');
+        const lastSeq = parseInt(lastParts[lastParts.length - 1], 10);
+        if (!isNaN(lastSeq)) nextNum = lastSeq + 1;
+      }
+      const urutan = String(nextNum).padStart(4, '0');
       const generatedInvoice = `PO-${dateStr}-${urutan}`;
 
       // 1. Create Purchase
