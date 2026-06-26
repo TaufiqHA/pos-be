@@ -320,6 +320,9 @@ const updatePurchase = async (req, res) => {
         where: { id },
         data: dataToUpdate
       });
+    }, {
+      maxWait: 10000,
+      timeout: 30000
     });
 
     res.json(updatedPurchase);
@@ -343,10 +346,19 @@ const deletePurchase = async (req, res) => {
 
       const stockAdded = purchase.status === 'Selesai' || (purchase.status === 'Lunas' && (purchase.supplier || '').toLowerCase() !== 'kantor pusat');
       if (stockAdded) {
+        const purchaseProductIds = [...new Set(purchase.items.map(item => item.productId))];
+        const purchaseProducts = await tx.product.findMany({
+          where: { id: { in: purchaseProductIds } }
+        });
+        const purchaseProductMap = {};
+        purchaseProducts.forEach(p => purchaseProductMap[p.id] = p);
+
         for (const item of purchase.items) {
-          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          const product = purchaseProductMap[item.productId];
           if (product) {
-            const newStock = product.stock - item.qty;
+            const prevStock = product.stock;
+            const newStock = prevStock - item.qty;
+            product.stock = newStock;
             await tx.product.update({
               where: { id: item.productId },
               data: { stock: newStock }
@@ -357,7 +369,7 @@ const deletePurchase = async (req, res) => {
                 productName: product.name,
                 type: 'Kurang',
                 qty: item.qty,
-                prevStock: product.stock,
+                prevStock,
                 newStock,
                 reason: `Hapus Pembelian ${purchase.invoice}`,
                 userName: req.user?.name || 'System',
@@ -370,10 +382,19 @@ const deletePurchase = async (req, res) => {
 
       const linkedSale = await tx.sale.findFirst({ where: { paymentRef: id }, include: { items: true } });
       if (linkedSale) {
+        const linkedSaleProductIds = [...new Set(linkedSale.items.map(item => item.productId))];
+        const linkedSaleProducts = await tx.product.findMany({
+          where: { id: { in: linkedSaleProductIds } }
+        });
+        const linkedSaleProductMap = {};
+        linkedSaleProducts.forEach(p => linkedSaleProductMap[p.id] = p);
+
         for (const item of linkedSale.items) {
-          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          const product = linkedSaleProductMap[item.productId];
           if (product) {
-            const newStock = product.stock + item.qty;
+            const prevStock = product.stock;
+            const newStock = prevStock + item.qty;
+            product.stock = newStock;
             await tx.product.update({ where: { id: item.productId }, data: { stock: newStock } });
             await tx.stockHistory.create({
               data: {
@@ -381,7 +402,7 @@ const deletePurchase = async (req, res) => {
                 productName: product.name,
                 type: 'Tambah',
                 qty: item.qty,
-                prevStock: product.stock,
+                prevStock,
                 newStock,
                 reason: `Hapus Penjualan Terkait ${linkedSale.invoice}`,
                 userName: req.user?.name || 'System',
@@ -397,6 +418,9 @@ const deletePurchase = async (req, res) => {
 
       await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
       await tx.purchase.delete({ where: { id } });
+    }, {
+      maxWait: 10000,
+      timeout: 30000
     });
 
     res.json({ message: 'Pembelian berhasil dihapus' });

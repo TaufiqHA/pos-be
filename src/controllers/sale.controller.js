@@ -69,11 +69,12 @@ const createSale = async (req, res) => {
 
       // 2 & 3. Reduce Stock and create StockHistory
       for (const item of items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        const product = productMap[item.productId];
         if (!product) throw new Error(`Product ${item.productId} not found`);
 
         const prevStock = product.stock;
         const newStock = prevStock - item.qty;
+        product.stock = newStock;
 
         await tx.product.update({
           where: { id: item.productId },
@@ -103,6 +104,17 @@ const createSale = async (req, res) => {
           branchId
         }
       });
+
+      // 5. Update PO Cabang secara atomik jika transaksi ini berasal dari permintaan PO
+      if (saleData.paymentRef) {
+        await tx.purchase.update({
+          where: { id: saleData.paymentRef },
+          data: {
+            isProcessed: true,
+            status: saleData.status || 'Belum Bayar'
+          }
+        });
+      }
 
       return sale;
     }, {
@@ -166,10 +178,19 @@ const deleteSale = async (req, res) => {
       });
       if (!sale) throw new Error('Sale not found');
 
+      const saleProductIds = [...new Set(sale.items.map(item => item.productId))];
+      const saleProducts = await tx.product.findMany({
+        where: { id: { in: saleProductIds } }
+      });
+      const saleProductMap = {};
+      saleProducts.forEach(p => saleProductMap[p.id] = p);
+
       for (const item of sale.items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        const product = saleProductMap[item.productId];
         if (product) {
-          const newStock = product.stock + item.qty;
+          const prevStock = product.stock;
+          const newStock = prevStock + item.qty;
+          product.stock = newStock;
           await tx.product.update({
             where: { id: item.productId },
             data: { stock: newStock }
@@ -180,7 +201,7 @@ const deleteSale = async (req, res) => {
               productName: product.name,
               type: 'Tambah',
               qty: item.qty,
-              prevStock: product.stock,
+              prevStock,
               newStock,
               reason: `Hapus Penjualan ${sale.invoice}`,
               userName: req.user?.name || 'System',
@@ -199,28 +220,47 @@ const deleteSale = async (req, res) => {
       }
 
       if (!linkedP && sale.customer) {
-        const allPurchases = await tx.purchase.findMany({ include: { items: true } });
         const branches = await tx.branch.findMany();
         const matchedBranch = branches.find(b => 
           sale.customer.toLowerCase().includes(b.name.toLowerCase()) ||
           b.name.toLowerCase().includes(sale.customer.toLowerCase())
         );
 
-        linkedP = allPurchases.find(p => {
-          const isPusatSup = (p.supplier || '').toLowerCase() === 'kantor pusat';
+        const purchaseWhere = {
+          supplier: { equals: 'Kantor Pusat', mode: 'insensitive' },
+          status: { not: 'Dibatalkan' }
+        };
+        if (matchedBranch) {
+          purchaseWhere.branchId = matchedBranch.id;
+        }
+
+        const candidatePurchases = await tx.purchase.findMany({
+          where: purchaseWhere,
+          include: { items: true }
+        });
+
+        linkedP = candidatePurchases.find(p => {
           const isSameAmount = Math.abs((p.total || 0) - (sale.grandTotal || sale.total || 0)) < 100;
-          const isSameBranch = matchedBranch ? (p.branchId === matchedBranch.id) : true;
-          return isPusatSup && isSameAmount && isSameBranch && p.status !== 'Dibatalkan';
+          return isSameAmount;
         });
       }
 
       if (linkedP) {
         const stockAdded = linkedP.status === 'Selesai' || (linkedP.status === 'Lunas' && (linkedP.supplier || '').toLowerCase() !== 'kantor pusat');
         if (stockAdded) {
+          const linkedProductIds = [...new Set(linkedP.items.map(item => item.productId))];
+          const linkedProducts = await tx.product.findMany({
+            where: { id: { in: linkedProductIds } }
+          });
+          const linkedProductMap = {};
+          linkedProducts.forEach(p => linkedProductMap[p.id] = p);
+
           for (const item of linkedP.items) {
-            const product = await tx.product.findUnique({ where: { id: item.productId } });
+            const product = linkedProductMap[item.productId];
             if (product) {
-              const newStock = product.stock - item.qty;
+              const prevStock = product.stock;
+              const newStock = prevStock - item.qty;
+              product.stock = newStock;
               await tx.product.update({
                 where: { id: item.productId },
                 data: { stock: newStock }
@@ -231,7 +271,7 @@ const deleteSale = async (req, res) => {
                   productName: product.name,
                   type: 'Kurang',
                   qty: item.qty,
-                  prevStock: product.stock,
+                  prevStock,
                   newStock,
                   reason: `Hapus Pembelian Terkait ${linkedP.invoice}`,
                   userName: req.user?.name || 'System',
@@ -248,6 +288,9 @@ const deleteSale = async (req, res) => {
       await tx.delivery.deleteMany({ where: { saleId: id } });
       await tx.saleItem.deleteMany({ where: { saleId: id } });
       await tx.sale.delete({ where: { id } });
+    }, {
+      maxWait: 10000,
+      timeout: 30000
     });
 
     res.json({ message: 'Penjualan berhasil dihapus' });
