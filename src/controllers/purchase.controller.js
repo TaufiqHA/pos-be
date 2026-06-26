@@ -102,6 +102,14 @@ const payPurchase = async (req, res) => {
         }
       });
 
+      const linkedSale = await tx.sale.findFirst({ where: { paymentRef: id } });
+      if (linkedSale) {
+        await tx.sale.update({
+          where: { id: linkedSale.id },
+          data: { cashGiven: newPaid, status }
+        });
+      }
+
       if (status === 'Lunas' && purchase.status !== 'Lunas' && purchase.supplier !== 'Kantor Pusat') {
         for (const item of purchase.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
@@ -288,6 +296,16 @@ const updatePurchase = async (req, res) => {
         }
       }
 
+      if (status) {
+        const linkedS = await tx.sale.findFirst({ where: { paymentRef: id } });
+        if (linkedS) {
+          await tx.sale.update({
+            where: { id: linkedS.id },
+            data: { status }
+          });
+        }
+      }
+
       return await tx.purchase.update({
         where: { id },
         data: dataToUpdate
@@ -303,4 +321,54 @@ const updatePurchase = async (req, res) => {
   }
 };
 
-module.exports = { getPurchases, createPurchase, payPurchase, processPurchase, cancelPurchase, updatePurchase };
+const deletePurchase = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.$transaction(async (tx) => {
+      const purchase = await tx.purchase.findUnique({
+        where: { id },
+        include: { items: true }
+      });
+      if (!purchase) throw new Error('Purchase not found');
+
+      const stockAdded = purchase.status === 'Selesai' || (purchase.status === 'Lunas' && (purchase.supplier || '').toLowerCase() !== 'kantor pusat');
+      if (stockAdded) {
+        for (const item of purchase.items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (product) {
+            const newStock = product.stock - item.qty;
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: newStock }
+            });
+            await tx.stockHistory.create({
+              data: {
+                productId: product.id,
+                productName: product.name,
+                type: 'Kurang',
+                qty: item.qty,
+                prevStock: product.stock,
+                newStock,
+                reason: `Hapus Pembelian ${purchase.invoice}`,
+                userName: req.user?.name || 'System',
+                branchId: purchase.branchId
+              }
+            });
+          }
+        }
+      }
+
+      await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
+      await tx.purchase.delete({ where: { id } });
+    });
+
+    res.json({ message: 'Pembelian berhasil dihapus' });
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ message: 'Purchase not found' });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { getPurchases, createPurchase, payPurchase, processPurchase, cancelPurchase, updatePurchase, deletePurchase };

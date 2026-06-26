@@ -123,6 +123,17 @@ const paySale = async (req, res) => {
         where: { id },
         data: { cashGiven: newPaid, status }
       });
+
+      if (sale.paymentRef) {
+        const linkedPurchase = await tx.purchase.findUnique({ where: { id: sale.paymentRef } });
+        if (linkedPurchase) {
+          await tx.purchase.update({
+            where: { id: sale.paymentRef },
+            data: { cashGiven: newPaid, status }
+          });
+        }
+      }
+
       return updatedSale;
     }, {
       maxWait: 5000,
@@ -135,4 +146,52 @@ const paySale = async (req, res) => {
   }
 };
 
-module.exports = { getSales, createSale, paySale };
+const deleteSale = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.$transaction(async (tx) => {
+      const sale = await tx.sale.findUnique({
+        where: { id },
+        include: { items: true }
+      });
+      if (!sale) throw new Error('Sale not found');
+
+      for (const item of sale.items) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        if (product) {
+          const newStock = product.stock + item.qty;
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: newStock }
+          });
+          await tx.stockHistory.create({
+            data: {
+              productId: product.id,
+              productName: product.name,
+              type: 'Tambah',
+              qty: item.qty,
+              prevStock: product.stock,
+              newStock,
+              reason: `Hapus Penjualan ${sale.invoice}`,
+              userName: req.user?.name || 'System',
+              branchId: sale.branchId
+            }
+          });
+        }
+      }
+
+      await tx.delivery.deleteMany({ where: { saleId: id } });
+      await tx.saleItem.deleteMany({ where: { saleId: id } });
+      await tx.sale.delete({ where: { id } });
+    });
+
+    res.json({ message: 'Penjualan berhasil dihapus' });
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ message: 'Sale not found' });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { getSales, createSale, paySale, deleteSale };
