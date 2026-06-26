@@ -180,41 +180,59 @@ const deleteSale = async (req, res) => {
         }
       }
 
+      let linkedP = null;
       if (sale.paymentRef) {
-        const linkedP = await tx.purchase.findUnique({
+        linkedP = await tx.purchase.findUnique({
           where: { id: sale.paymentRef },
           include: { items: true }
         });
-        if (linkedP) {
-          const stockAdded = linkedP.status === 'Selesai' || (linkedP.status === 'Lunas' && (linkedP.supplier || '').toLowerCase() !== 'kantor pusat');
-          if (stockAdded) {
-            for (const item of linkedP.items) {
-              const product = await tx.product.findUnique({ where: { id: item.productId } });
-              if (product) {
-                const newStock = product.stock - item.qty;
-                await tx.product.update({
-                  where: { id: item.productId },
-                  data: { stock: newStock }
-                });
-                await tx.stockHistory.create({
-                  data: {
-                    productId: product.id,
-                    productName: product.name,
-                    type: 'Kurang',
-                    qty: item.qty,
-                    prevStock: product.stock,
-                    newStock,
-                    reason: `Hapus Pembelian Terkait ${linkedP.invoice}`,
-                    userName: req.user?.name || 'System',
-                    branchId: linkedP.branchId
-                  }
-                });
-              }
+      }
+
+      if (!linkedP && sale.customer) {
+        const allPurchases = await tx.purchase.findMany({ include: { items: true } });
+        const branches = await tx.branch.findMany();
+        const matchedBranch = branches.find(b => 
+          sale.customer.toLowerCase().includes(b.name.toLowerCase()) ||
+          b.name.toLowerCase().includes(sale.customer.toLowerCase())
+        );
+
+        linkedP = allPurchases.find(p => {
+          const isPusatSup = (p.supplier || '').toLowerCase() === 'kantor pusat';
+          const isSameAmount = Math.abs((p.total || 0) - (sale.grandTotal || sale.total || 0)) < 100;
+          const isSameBranch = matchedBranch ? (p.branchId === matchedBranch.id) : true;
+          return isPusatSup && isSameAmount && isSameBranch && p.status !== 'Dibatalkan';
+        });
+      }
+
+      if (linkedP) {
+        const stockAdded = linkedP.status === 'Selesai' || (linkedP.status === 'Lunas' && (linkedP.supplier || '').toLowerCase() !== 'kantor pusat');
+        if (stockAdded) {
+          for (const item of linkedP.items) {
+            const product = await tx.product.findUnique({ where: { id: item.productId } });
+            if (product) {
+              const newStock = product.stock - item.qty;
+              await tx.product.update({
+                where: { id: item.productId },
+                data: { stock: newStock }
+              });
+              await tx.stockHistory.create({
+                data: {
+                  productId: product.id,
+                  productName: product.name,
+                  type: 'Kurang',
+                  qty: item.qty,
+                  prevStock: product.stock,
+                  newStock,
+                  reason: `Hapus Pembelian Terkait ${linkedP.invoice}`,
+                  userName: req.user?.name || 'System',
+                  branchId: linkedP.branchId
+                }
+              });
             }
           }
-          await tx.purchaseItem.deleteMany({ where: { purchaseId: linkedP.id } });
-          await tx.purchase.delete({ where: { id: linkedP.id } });
         }
+        await tx.purchaseItem.deleteMany({ where: { purchaseId: linkedP.id } });
+        await tx.purchase.delete({ where: { id: linkedP.id } });
       }
 
       await tx.delivery.deleteMany({ where: { saleId: id } });
