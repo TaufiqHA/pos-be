@@ -358,6 +358,33 @@ const deletePurchase = async (req, res) => {
         }
       }
 
+      const linkedSale = await tx.sale.findFirst({ where: { paymentRef: id }, include: { items: true } });
+      if (linkedSale) {
+        for (const item of linkedSale.items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (product) {
+            const newStock = product.stock + item.qty;
+            await tx.product.update({ where: { id: item.productId }, data: { stock: newStock } });
+            await tx.stockHistory.create({
+              data: {
+                productId: product.id,
+                productName: product.name,
+                type: 'Tambah',
+                qty: item.qty,
+                prevStock: product.stock,
+                newStock,
+                reason: `Hapus Penjualan Terkait ${linkedSale.invoice}`,
+                userName: req.user?.name || 'System',
+                branchId: linkedSale.branchId
+              }
+            });
+          }
+        }
+        await tx.delivery.deleteMany({ where: { saleId: linkedSale.id } });
+        await tx.saleItem.deleteMany({ where: { saleId: linkedSale.id } });
+        await tx.sale.delete({ where: { id: linkedSale.id } });
+      }
+
       await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
       await tx.purchase.delete({ where: { id } });
     });
