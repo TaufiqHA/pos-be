@@ -59,11 +59,44 @@ const createPurchase = async (req, res) => {
               subtotal: item.subtotal
             }))
           }
-        }
+        },
+        include: { items: true }
       });
 
-      // Penambahan stok tidak dilakukan di sini.
-      // Stok baru akan ditambahkan ketika Cabang menekan "Terima & Cek" (status menjadi Selesai).
+      const stockAdded = purchase.status === 'Selesai' || (purchase.status === 'Lunas' && (purchase.supplier || '').toLowerCase() !== 'kantor pusat');
+      if (stockAdded) {
+        for (const item of purchase.items) {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product) continue;
+
+          const prevStock = product.stock;
+          const newStock = prevStock + item.qty;
+          const oldAverageCost = product.averageCost ?? product.buyPrice;
+          let newAverageCost = oldAverageCost;
+          if (newStock > 0) {
+            newAverageCost = ((prevStock * oldAverageCost) + (item.qty * item.price)) / newStock;
+          }
+
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: newStock, averageCost: newAverageCost }
+          });
+
+          await tx.stockHistory.create({
+            data: {
+              productId: product.id,
+              productName: product.name,
+              type: 'Tambah',
+              qty: item.qty,
+              prevStock: product.stock,
+              newStock,
+              reason: `Pembelian Lunas: ${purchase.invoice}`,
+              userName: req.user?.name || user?.name || 'System',
+              branchId: purchase.branchId
+            }
+          });
+        }
+      }
 
       return purchase;
     }, {
