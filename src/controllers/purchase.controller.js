@@ -153,7 +153,7 @@ const payPurchase = async (req, res) => {
         });
       }
 
-      if (status === 'Lunas' && purchase.status !== 'Lunas' && purchase.supplier !== 'Kantor Pusat') {
+      if (status === 'Lunas' && purchase.status !== 'Lunas' && (purchase.supplier || '').toLowerCase() !== 'kantor pusat') {
         for (const item of purchase.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) continue;
@@ -305,7 +305,7 @@ const updatePurchase = async (req, res) => {
       }
 
       // Jika status BERUBAH menjadi 'Lunas' untuk supplier eksternal
-      if (status === 'Lunas' && existingPurchase.status !== 'Lunas' && existingPurchase.supplier !== 'Kantor Pusat') {
+      if (status === 'Lunas' && existingPurchase.status !== 'Lunas' && (existingPurchase.supplier || '').toLowerCase() !== 'kantor pusat') {
         for (const item of existingPurchase.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) continue;
