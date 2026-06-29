@@ -120,10 +120,17 @@ const updateProduct = async (req, res) => {
     const { wholesalePrices, ...productData } = req.body;
     const productId = req.params.id;
 
+    const currentProd = await prisma.product.findUnique({ where: { id: productId } });
+    const updatePayload = { ...productData };
+
+    if (productData.buyPrice !== undefined && currentProd && currentProd.stock <= 0) {
+      updatePayload.averageCost = productData.buyPrice;
+    }
+
     const data = await prisma.product.update({
       where: { id: productId },
       data: {
-        ...productData,
+        ...updatePayload,
         wholesalePrices: {
           deleteMany: {},
           create: wholesalePrices ? wholesalePrices.map(item => ({

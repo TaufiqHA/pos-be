@@ -1,5 +1,32 @@
 const prisma = require('../prisma');
 
+/**
+ * Menghitung Moving Average Cost baru secara aman.
+ * Jika harga beli baru sama persis dengan modal rata-rata lama, kembalikan modal lama (konstan).
+ */
+function calculateSafeAverageCost(prevStock, oldAverageCost, incomingQty, incomingPrice) {
+  // 1. Jika stok sebelumnya habis (<= 0), modal rata-rata langsung mengikuti harga beli baru
+  if (prevStock <= 0) {
+    return incomingPrice;
+  }
+
+  // 2. Guard: Jika selisih harga beli baru dengan modal lama sangat kecil (kembar/sama persis),
+  // pertahankan modal rata-rata lama agar tidak terjadi floating-point drift.
+  if (Math.abs(incomingPrice - oldAverageCost) < 0.01) {
+    return oldAverageCost;
+  }
+
+  const newStock = prevStock + incomingQty;
+  if (newStock <= 0) return oldAverageCost;
+
+  // 3. Kalkulasi weighted average cost
+  const totalValue = (prevStock * oldAverageCost) + (incomingQty * incomingPrice);
+  const calculatedCost = totalValue / newStock;
+
+  // 4. Bulatkan ke 2 desimal atau bilangan bulat terdekat untuk mencegah desimal tak hingga
+  return Math.round(calculatedCost * 100) / 100;
+}
+
 const getPurchases = async (req, res) => {
   try {
     const data = await prisma.purchase.findMany({
@@ -72,10 +99,7 @@ const createPurchase = async (req, res) => {
           const prevStock = product.stock;
           const newStock = prevStock + item.qty;
           const oldAverageCost = product.averageCost ?? product.buyPrice;
-          let newAverageCost = oldAverageCost;
-          if (newStock > 0) {
-            newAverageCost = ((prevStock * oldAverageCost) + (item.qty * item.price)) / newStock;
-          }
+          const newAverageCost = calculateSafeAverageCost(prevStock, oldAverageCost, item.qty, item.price);
 
           await tx.product.update({
             where: { id: item.productId },
@@ -161,10 +185,7 @@ const payPurchase = async (req, res) => {
           const prevStock = product.stock;
           const newStock = prevStock + item.qty;
           const oldAverageCost = product.averageCost ?? product.buyPrice;
-          let newAverageCost = oldAverageCost;
-          if (newStock > 0) {
-            newAverageCost = ((prevStock * oldAverageCost) + (item.qty * item.price)) / newStock;
-          }
+          const newAverageCost = calculateSafeAverageCost(prevStock, oldAverageCost, item.qty, item.price);
 
           await tx.product.update({
             where: { id: item.productId },
@@ -269,8 +290,12 @@ const updatePurchase = async (req, res) => {
 
       if (!existingPurchase) throw new Error('Purchase not found');
 
+      // Mencegah duplikasi kalkulasi stok & modal (Double Processing Guard)
+      const wasAlreadyStocked = existingPurchase.status === 'Selesai' || 
+        (existingPurchase.status === 'Lunas' && (existingPurchase.supplier || '').toLowerCase() !== 'kantor pusat');
+
       // Jika status BERUBAH menjadi 'Selesai' (Cabang sudah Terima & Cek)
-      if (status === 'Selesai' && existingPurchase.status !== 'Selesai') {
+      if (status === 'Selesai' && !wasAlreadyStocked) {
         for (const item of existingPurchase.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) throw new Error(`Product ${item.productId} not found`);
@@ -278,10 +303,7 @@ const updatePurchase = async (req, res) => {
           const prevStock = product.stock;
           const newStock = prevStock + item.qty;
           const oldAverageCost = product.averageCost ?? product.buyPrice;
-          let newAverageCost = oldAverageCost;
-          if (newStock > 0) {
-            newAverageCost = ((prevStock * oldAverageCost) + (item.qty * item.price)) / newStock;
-          }
+          const newAverageCost = calculateSafeAverageCost(prevStock, oldAverageCost, item.qty, item.price);
 
           await tx.product.update({
             where: { id: item.productId },
@@ -305,7 +327,7 @@ const updatePurchase = async (req, res) => {
       }
 
       // Jika status BERUBAH menjadi 'Lunas' untuk supplier eksternal
-      if (status === 'Lunas' && existingPurchase.status !== 'Lunas' && (existingPurchase.supplier || '').toLowerCase() !== 'kantor pusat') {
+      if (status === 'Lunas' && !wasAlreadyStocked && (existingPurchase.supplier || '').toLowerCase() !== 'kantor pusat') {
         for (const item of existingPurchase.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) continue;
@@ -313,10 +335,7 @@ const updatePurchase = async (req, res) => {
           const prevStock = product.stock;
           const newStock = prevStock + item.qty;
           const oldAverageCost = product.averageCost ?? product.buyPrice;
-          let newAverageCost = oldAverageCost;
-          if (newStock > 0) {
-            newAverageCost = ((prevStock * oldAverageCost) + (item.qty * item.price)) / newStock;
-          }
+          const newAverageCost = calculateSafeAverageCost(prevStock, oldAverageCost, item.qty, item.price);
 
           await tx.product.update({
             where: { id: item.productId },
