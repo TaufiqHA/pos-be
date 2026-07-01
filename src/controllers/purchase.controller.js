@@ -178,6 +178,7 @@ const payPurchase = async (req, res) => {
       }
 
       if (status === 'Lunas' && purchase.status !== 'Lunas' && (purchase.supplier || '').toLowerCase() !== 'kantor pusat') {
+        const finalBranchId = purchase.branchId || req.user?.branchId || null;
         for (const item of purchase.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) continue;
@@ -202,7 +203,7 @@ const payPurchase = async (req, res) => {
               newStock,
               reason: `Pembayaran PO Lunas: ${purchase.invoice}`,
               userName: req.user?.name || 'System',
-              branchId: purchase.branchId
+              branchId: finalBranchId
             }
           });
         }
@@ -294,6 +295,11 @@ const updatePurchase = async (req, res) => {
       const wasAlreadyStocked = existingPurchase.status === 'Selesai' || 
         (existingPurchase.status === 'Lunas' && (existingPurchase.supplier || '').toLowerCase() !== 'kantor pusat');
 
+      const finalBranchId = existingPurchase.branchId || req.user?.branchId || null;
+      if (!existingPurchase.branchId && finalBranchId) {
+        dataToUpdate.branchId = finalBranchId;
+      }
+
       // Jika status BERUBAH menjadi 'Selesai' (Cabang sudah Terima & Cek)
       if (status === 'Selesai' && !wasAlreadyStocked) {
         for (const item of existingPurchase.items) {
@@ -320,7 +326,7 @@ const updatePurchase = async (req, res) => {
               newStock,
               reason: `Penerimaan PO: ${existingPurchase.invoice}`,
               userName: req.user?.name || 'Cabang',
-              branchId: existingPurchase.branchId
+              branchId: finalBranchId
             }
           });
         }
@@ -352,7 +358,7 @@ const updatePurchase = async (req, res) => {
               newStock,
               reason: `PO Lunas: ${existingPurchase.invoice}`,
               userName: req.user?.name || 'System',
-              branchId: existingPurchase.branchId
+              branchId: finalBranchId
             }
           });
         }
@@ -468,6 +474,14 @@ const deletePurchase = async (req, res) => {
         await tx.sale.delete({ where: { id: linkedSale.id } });
       }
 
+      await tx.stockHistory.deleteMany({
+        where: {
+          reason: {
+            contains: purchase.invoice,
+            mode: 'insensitive'
+          }
+        }
+      });
       await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
       await tx.purchase.delete({ where: { id } });
     }, {

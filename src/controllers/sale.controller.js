@@ -281,6 +281,14 @@ const deleteSale = async (req, res) => {
             }
           }
         }
+        await tx.stockHistory.deleteMany({
+          where: {
+            reason: {
+              contains: linkedP.invoice,
+              mode: 'insensitive'
+            }
+          }
+        });
         await tx.purchaseItem.deleteMany({ where: { purchaseId: linkedP.id } });
         await tx.purchase.delete({ where: { id: linkedP.id } });
       }
