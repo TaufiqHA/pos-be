@@ -365,12 +365,31 @@ const updatePurchase = async (req, res) => {
       }
 
       if (status) {
-        const linkedS = await tx.sale.findFirst({ where: { paymentRef: id } });
+        const linkedS = await tx.sale.findFirst({ 
+          where: { 
+            OR: [
+              { invoice: existingPurchase.invoice },
+              { paymentRef: id }
+            ]
+          } 
+        });
+
         if (linkedS) {
           await tx.sale.update({
             where: { id: linkedS.id },
             data: { status }
           });
+
+          const linkedD = await tx.delivery.findFirst({
+            where: { saleId: linkedS.id }
+          });
+
+          if (linkedD) {
+            await tx.delivery.update({
+              where: { id: linkedD.id },
+              data: { status }
+            });
+          }
         }
       }
 
