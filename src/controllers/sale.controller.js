@@ -2,7 +2,21 @@ const prisma = require('../prisma');
 
 const getSales = async (req, res) => {
   try {
+    const { destination_type } = req.query;
+    let where = {};
+
+    if (destination_type === 'cabang') {
+      const branches = await prisma.branch.findMany({ select: { name: true } });
+      const branchNames = branches.map(b => b.name);
+      where = {
+        customer: {
+          in: branchNames
+        }
+      };
+    }
+
     const data = await prisma.sale.findMany({
+      where,
       include: { items: true, deliveries: true },
       orderBy: { createdAt: 'desc' }
     });
