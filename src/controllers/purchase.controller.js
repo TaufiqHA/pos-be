@@ -542,23 +542,46 @@ const deletePurchase = async (req, res) => {
         for (const item of linkedSale.items) {
           const product = linkedSaleProductMap[item.productId];
           if (product) {
-            const prevStock = product.stock;
-            const newStock = prevStock + item.qty;
-            product.stock = newStock;
-            await tx.product.update({ where: { id: item.productId }, data: { stock: newStock } });
-            await tx.stockHistory.create({
-              data: {
-                productId: product.id,
-                productName: product.name,
-                type: 'Tambah',
-                qty: item.qty,
-                prevStock,
-                newStock,
-                reason: `Hapus Penjualan Terkait ${linkedSale.invoice}`,
-                userName: req.user?.name || 'System',
-                branchId: linkedSale.branchId
-              }
-            });
+            if (!linkedSale.branchId) {
+              const prevStock = product.stock;
+              const newStock = prevStock + item.qty;
+              product.stock = newStock;
+              await tx.product.update({ where: { id: item.productId }, data: { stock: newStock } });
+              await tx.stockHistory.create({
+                data: {
+                  productId: product.id,
+                  productName: product.name,
+                  type: 'Tambah',
+                  qty: item.qty,
+                  prevStock,
+                  newStock,
+                  reason: `Hapus Penjualan Terkait ${linkedSale.invoice}`,
+                  userName: req.user?.name || 'System',
+                  branchId: null
+                }
+              });
+            } else {
+              const history = await tx.stockHistory.findMany({
+                where: { productId: item.productId, branchId: linkedSale.branchId }
+              });
+              const branchStock = history.reduce((sum, h) => {
+                return h.type === 'Tambah' ? sum + h.qty : sum - h.qty;
+              }, 0);
+
+              await tx.stockHistory.create({
+                data: {
+                  productId: product.id,
+                  productName: product.name,
+                  type: 'Tambah',
+                  qty: item.qty,
+                  prevStock: branchStock,
+                  newStock: branchStock + item.qty,
+                  reason: `Hapus Penjualan Terkait ${linkedSale.invoice}`,
+                  userName: req.user?.name || 'System',
+                  branchId: linkedSale.branchId
+                }
+              });
+            }
           }
         }
         await tx.delivery.deleteMany({ where: { saleId: linkedSale.id } });

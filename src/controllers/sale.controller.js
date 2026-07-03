@@ -86,28 +86,51 @@ const createSale = async (req, res) => {
         const product = productMap[item.productId];
         if (!product) throw new Error(`Product ${item.productId} not found`);
 
-        const prevStock = product.stock;
-        const newStock = prevStock - item.qty;
-        product.stock = newStock;
+        if (!branchId) {
+          const prevStock = product.stock;
+          const newStock = prevStock - item.qty;
+          product.stock = newStock;
 
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: newStock }
-        });
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: newStock }
+          });
 
-        await tx.stockHistory.create({
-          data: {
-            productId: product.id,
-            productName: product.name,
-            type: 'Kurang',
-            qty: item.qty,
-            prevStock,
-            newStock,
-            reason: `Penjualan ${sale.invoice}`,
-            userName: saleData.salesName || user?.name || 'System',
-            branchId
-          }
-        });
+          await tx.stockHistory.create({
+            data: {
+              productId: product.id,
+              productName: product.name,
+              type: 'Kurang',
+              qty: item.qty,
+              prevStock,
+              newStock,
+              reason: `Penjualan ${sale.invoice}`,
+              userName: saleData.salesName || user?.name || 'System',
+              branchId: null
+            }
+          });
+        } else {
+          const history = await tx.stockHistory.findMany({
+            where: { productId: item.productId, branchId }
+          });
+          const branchStock = history.reduce((sum, h) => {
+            return h.type === 'Tambah' ? sum + h.qty : sum - h.qty;
+          }, 0);
+
+          await tx.stockHistory.create({
+            data: {
+              productId: product.id,
+              productName: product.name,
+              type: 'Kurang',
+              qty: item.qty,
+              prevStock: branchStock,
+              newStock: branchStock - item.qty,
+              reason: `Penjualan ${sale.invoice}`,
+              userName: saleData.salesName || user?.name || 'System',
+              branchId
+            }
+          });
+        }
       }
 
       // 4. Create Delivery
@@ -202,26 +225,49 @@ const deleteSale = async (req, res) => {
       for (const item of sale.items) {
         const product = saleProductMap[item.productId];
         if (product) {
-          const prevStock = product.stock;
-          const newStock = prevStock + item.qty;
-          product.stock = newStock;
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: newStock }
-          });
-          await tx.stockHistory.create({
-            data: {
-              productId: product.id,
-              productName: product.name,
-              type: 'Tambah',
-              qty: item.qty,
-              prevStock,
-              newStock,
-              reason: `Hapus Penjualan ${sale.invoice}`,
-              userName: req.user?.name || 'System',
-              branchId: sale.branchId
-            }
-          });
+          if (!sale.branchId) {
+            const prevStock = product.stock;
+            const newStock = prevStock + item.qty;
+            product.stock = newStock;
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: newStock }
+            });
+            await tx.stockHistory.create({
+              data: {
+                productId: product.id,
+                productName: product.name,
+                type: 'Tambah',
+                qty: item.qty,
+                prevStock,
+                newStock,
+                reason: `Hapus Penjualan ${sale.invoice}`,
+                userName: req.user?.name || 'System',
+                branchId: null
+              }
+            });
+          } else {
+            const history = await tx.stockHistory.findMany({
+              where: { productId: item.productId, branchId: sale.branchId }
+            });
+            const branchStock = history.reduce((sum, h) => {
+              return h.type === 'Tambah' ? sum + h.qty : sum - h.qty;
+            }, 0);
+
+            await tx.stockHistory.create({
+              data: {
+                productId: product.id,
+                productName: product.name,
+                type: 'Tambah',
+                qty: item.qty,
+                prevStock: branchStock,
+                newStock: branchStock + item.qty,
+                reason: `Hapus Penjualan ${sale.invoice}`,
+                userName: req.user?.name || 'System',
+                branchId: sale.branchId
+              }
+            });
+          }
         }
       }
 
