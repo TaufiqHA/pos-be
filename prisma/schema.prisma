@@ -94,6 +94,7 @@ model Product {
   branchPrices  Json?
   branchIsWholesale     Json?
   branchWholesalePrices Json?
+  isDeleted     Boolean  @default(false)
   
   wholesalePrices WholesalePrice[]
   

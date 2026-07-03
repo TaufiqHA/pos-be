@@ -5,9 +5,10 @@ const getProducts = async (req, res) => {
     const user = req.user;
     const branchIdFilter = req.query.branch_id;
     
-    let whereClause = {};
+    let whereClause = { isDeleted: false };
     if (branchIdFilter) {
       whereClause = {
+        isDeleted: false,
         purchaseItems: {
           some: {
             purchase: {
@@ -149,8 +150,25 @@ const updateProduct = async (req, res) => {
 
 const deleteProduct = async (req, res) => {
   try {
-    await prisma.product.delete({ where: { id: req.params.id } });
-    res.json({ message: 'Deleted' });
+    const productId = req.params.id;
+    
+    // Periksa apakah produk sudah digunakan dalam transaksi
+    const usedInSales = await prisma.saleItem.findFirst({ where: { productId } });
+    const usedInPurchases = await prisma.purchaseItem.findFirst({ where: { productId } });
+    const usedInStockHistory = await prisma.stockHistory.findFirst({ where: { productId } });
+    
+    if (usedInSales || usedInPurchases || usedInStockHistory) {
+      // Soft delete
+      await prisma.product.update({
+        where: { id: productId },
+        data: { isDeleted: true }
+      });
+      res.json({ message: 'Soft Deleted' });
+    } else {
+      // Hard delete
+      await prisma.product.delete({ where: { id: productId } });
+      res.json({ message: 'Hard Deleted' });
+    }
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
