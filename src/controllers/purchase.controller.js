@@ -90,35 +90,60 @@ const createPurchase = async (req, res) => {
         include: { items: true }
       });
 
-      const stockAdded = purchase.status === 'Selesai' || (purchase.status === 'Lunas' && (purchase.supplier || '').toLowerCase() !== 'kantor pusat');
+      const isKantorPusat = (purchase.supplier || '').toLowerCase() === 'kantor pusat';
+      const stockAdded = purchase.status === 'Selesai' || purchase.status === 'Lunas';
       if (stockAdded) {
         for (const item of purchase.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) continue;
 
-          const prevStock = product.stock;
-          const newStock = prevStock + item.qty;
-          const oldAverageCost = product.averageCost ?? product.buyPrice;
-          const newAverageCost = calculateSafeAverageCost(prevStock, oldAverageCost, item.qty, item.price);
+          if (isKantorPusat) {
+            // Hitung stok virtual cabang dari history
+            const history = await tx.stockHistory.findMany({
+              where: { productId: item.productId, branchId: purchase.branchId }
+            });
+            const branchStock = history.reduce((sum, h) => {
+              return h.type === 'Tambah' ? sum + h.qty : sum - h.qty;
+            }, 0);
 
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: newStock, averageCost: newAverageCost }
-          });
+            await tx.stockHistory.create({
+              data: {
+                productId: item.productId,
+                productName: product.name,
+                type: 'Tambah',
+                qty: item.qty,
+                prevStock: branchStock,
+                newStock: branchStock + item.qty,
+                reason: `Pembelian Lunas: ${purchase.invoice}`,
+                userName: req.user?.name || user?.name || 'System',
+                branchId: purchase.branchId
+              }
+            });
+          } else {
+            const prevStock = product.stock;
+            const newStock = prevStock + item.qty;
+            const oldAverageCost = product.averageCost ?? product.buyPrice;
+            const newAverageCost = calculateSafeAverageCost(prevStock, oldAverageCost, item.qty, item.price);
 
-          await tx.stockHistory.create({
-            data: {
-              productId: product.id,
-              productName: product.name,
-              type: 'Tambah',
-              qty: item.qty,
-              prevStock: product.stock,
-              newStock,
-              reason: `Pembelian Lunas: ${purchase.invoice}`,
-              userName: req.user?.name || user?.name || 'System',
-              branchId: purchase.branchId
-            }
-          });
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: newStock, averageCost: newAverageCost }
+            });
+
+            await tx.stockHistory.create({
+              data: {
+                productId: product.id,
+                productName: product.name,
+                type: 'Tambah',
+                qty: item.qty,
+                prevStock,
+                newStock,
+                reason: `Pembelian Lunas: ${purchase.invoice}`,
+                userName: req.user?.name || user?.name || 'System',
+                branchId: purchase.branchId
+              }
+            });
+          }
         }
       }
 
@@ -292,8 +317,8 @@ const updatePurchase = async (req, res) => {
       if (!existingPurchase) throw new Error('Purchase not found');
 
       // Mencegah duplikasi kalkulasi stok & modal (Double Processing Guard)
-      const wasAlreadyStocked = existingPurchase.status === 'Selesai' || 
-        (existingPurchase.status === 'Lunas' && (existingPurchase.supplier || '').toLowerCase() !== 'kantor pusat');
+      const wasAlreadyStocked = (existingPurchase.status === 'Selesai' || existingPurchase.status === 'Lunas') && 
+        (existingPurchase.supplier || '').toLowerCase() !== 'kantor pusat';
 
       const finalBranchId = existingPurchase.branchId || req.user?.branchId || null;
       if (!existingPurchase.branchId && finalBranchId) {
@@ -302,33 +327,57 @@ const updatePurchase = async (req, res) => {
 
       // Jika status BERUBAH menjadi 'Selesai' (Cabang sudah Terima & Cek)
       if (status === 'Selesai' && !wasAlreadyStocked) {
+        const isKantorPusat = (existingPurchase.supplier || '').toLowerCase() === 'kantor pusat';
         for (const item of existingPurchase.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) throw new Error(`Product ${item.productId} not found`);
 
-          const prevStock = product.stock;
-          const newStock = prevStock + item.qty;
-          const oldAverageCost = product.averageCost ?? product.buyPrice;
-          const newAverageCost = calculateSafeAverageCost(prevStock, oldAverageCost, item.qty, item.price);
+          if (isKantorPusat) {
+            const history = await tx.stockHistory.findMany({
+              where: { productId: item.productId, branchId: finalBranchId }
+            });
+            const branchStock = history.reduce((sum, h) => {
+              return h.type === 'Tambah' ? sum + h.qty : sum - h.qty;
+            }, 0);
 
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: newStock, averageCost: newAverageCost }
-          });
+            await tx.stockHistory.create({
+              data: {
+                productId: item.productId,
+                productName: product.name,
+                type: 'Tambah',
+                qty: item.qty,
+                prevStock: branchStock,
+                newStock: branchStock + item.qty,
+                reason: `Penerimaan PO: ${existingPurchase.invoice}`,
+                userName: req.user?.name || 'Cabang',
+                branchId: finalBranchId
+              }
+            });
+          } else {
+            const prevStock = product.stock;
+            const newStock = prevStock + item.qty;
+            const oldAverageCost = product.averageCost ?? product.buyPrice;
+            const newAverageCost = calculateSafeAverageCost(prevStock, oldAverageCost, item.qty, item.price);
 
-          await tx.stockHistory.create({
-            data: {
-              productId: product.id,
-              productName: product.name,
-              type: 'Tambah',
-              qty: item.qty,
-              prevStock: product.stock,
-              newStock,
-              reason: `Penerimaan PO: ${existingPurchase.invoice}`,
-              userName: req.user?.name || 'Cabang',
-              branchId: finalBranchId
-            }
-          });
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: newStock, averageCost: newAverageCost }
+            });
+
+            await tx.stockHistory.create({
+              data: {
+                productId: product.id,
+                productName: product.name,
+                type: 'Tambah',
+                qty: item.qty,
+                prevStock,
+                newStock,
+                reason: `Penerimaan PO: ${existingPurchase.invoice}`,
+                userName: req.user?.name || 'Cabang',
+                branchId: finalBranchId
+              }
+            });
+          }
         }
       }
 
@@ -421,7 +470,8 @@ const deletePurchase = async (req, res) => {
       });
       if (!purchase) throw new Error('Purchase not found');
 
-      const stockAdded = purchase.status === 'Selesai' || (purchase.status === 'Lunas' && (purchase.supplier || '').toLowerCase() !== 'kantor pusat');
+      const isKantorPusat = (purchase.supplier || '').toLowerCase() === 'kantor pusat';
+      const stockAdded = purchase.status === 'Selesai' || purchase.status === 'Lunas';
       if (stockAdded) {
         const purchaseProductIds = [...new Set(purchase.items.map(item => item.productId))];
         const purchaseProducts = await tx.product.findMany({
@@ -433,26 +483,49 @@ const deletePurchase = async (req, res) => {
         for (const item of purchase.items) {
           const product = purchaseProductMap[item.productId];
           if (product) {
-            const prevStock = product.stock;
-            const newStock = prevStock - item.qty;
-            product.stock = newStock;
-            await tx.product.update({
-              where: { id: item.productId },
-              data: { stock: newStock }
-            });
-            await tx.stockHistory.create({
-              data: {
-                productId: product.id,
-                productName: product.name,
-                type: 'Kurang',
-                qty: item.qty,
-                prevStock,
-                newStock,
-                reason: `Hapus Pembelian ${purchase.invoice}`,
-                userName: req.user?.name || 'System',
-                branchId: purchase.branchId
-              }
-            });
+            if (isKantorPusat) {
+              const history = await tx.stockHistory.findMany({
+                where: { productId: item.productId, branchId: purchase.branchId }
+              });
+              const branchStock = history.reduce((sum, h) => {
+                return h.type === 'Tambah' ? sum + h.qty : sum - h.qty;
+              }, 0);
+
+              await tx.stockHistory.create({
+                data: {
+                  productId: product.id,
+                  productName: product.name,
+                  type: 'Kurang',
+                  qty: item.qty,
+                  prevStock: branchStock,
+                  newStock: branchStock - item.qty,
+                  reason: `Hapus Pembelian Terkait ${purchase.invoice}`,
+                  userName: req.user?.name || 'System',
+                  branchId: purchase.branchId
+                }
+              });
+            } else {
+              const prevStock = product.stock;
+              const newStock = prevStock - item.qty;
+              product.stock = newStock;
+              await tx.product.update({
+                where: { id: item.productId },
+                data: { stock: newStock }
+              });
+              await tx.stockHistory.create({
+                data: {
+                  productId: product.id,
+                  productName: product.name,
+                  type: 'Kurang',
+                  qty: item.qty,
+                  prevStock,
+                  newStock,
+                  reason: `Hapus Pembelian Terkait ${purchase.invoice}`,
+                  userName: req.user?.name || 'System',
+                  branchId: purchase.branchId
+                }
+              });
+            }
           }
         }
       }

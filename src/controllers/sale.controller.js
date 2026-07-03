@@ -260,7 +260,8 @@ const deleteSale = async (req, res) => {
       }
 
       if (linkedP) {
-        const stockAdded = linkedP.status === 'Selesai' || (linkedP.status === 'Lunas' && (linkedP.supplier || '').toLowerCase() !== 'kantor pusat');
+        const isKantorPusat = (linkedP.supplier || '').toLowerCase() === 'kantor pusat';
+        const stockAdded = linkedP.status === 'Selesai' || linkedP.status === 'Lunas';
         if (stockAdded) {
           const linkedProductIds = [...new Set(linkedP.items.map(item => item.productId))];
           const linkedProducts = await tx.product.findMany({
@@ -272,26 +273,49 @@ const deleteSale = async (req, res) => {
           for (const item of linkedP.items) {
             const product = linkedProductMap[item.productId];
             if (product) {
-              const prevStock = product.stock;
-              const newStock = prevStock - item.qty;
-              product.stock = newStock;
-              await tx.product.update({
-                where: { id: item.productId },
-                data: { stock: newStock }
-              });
-              await tx.stockHistory.create({
-                data: {
-                  productId: product.id,
-                  productName: product.name,
-                  type: 'Kurang',
-                  qty: item.qty,
-                  prevStock,
-                  newStock,
-                  reason: `Hapus Pembelian Terkait ${linkedP.invoice}`,
-                  userName: req.user?.name || 'System',
-                  branchId: linkedP.branchId
-                }
-              });
+              if (isKantorPusat) {
+                const history = await tx.stockHistory.findMany({
+                  where: { productId: item.productId, branchId: linkedP.branchId }
+                });
+                const branchStock = history.reduce((sum, h) => {
+                  return h.type === 'Tambah' ? sum + h.qty : sum - h.qty;
+                }, 0);
+
+                await tx.stockHistory.create({
+                  data: {
+                    productId: product.id,
+                    productName: product.name,
+                    type: 'Kurang',
+                    qty: item.qty,
+                    prevStock: branchStock,
+                    newStock: branchStock - item.qty,
+                    reason: `Hapus Pembelian Terkait ${linkedP.invoice}`,
+                    userName: req.user?.name || 'System',
+                    branchId: linkedP.branchId
+                  }
+                });
+              } else {
+                const prevStock = product.stock;
+                const newStock = prevStock - item.qty;
+                product.stock = newStock;
+                await tx.product.update({
+                  where: { id: item.productId },
+                  data: { stock: newStock }
+                });
+                await tx.stockHistory.create({
+                  data: {
+                    productId: product.id,
+                    productName: product.name,
+                    type: 'Kurang',
+                    qty: item.qty,
+                    prevStock,
+                    newStock,
+                    reason: `Hapus Pembelian Terkait ${linkedP.invoice}`,
+                    userName: req.user?.name || 'System',
+                    branchId: linkedP.branchId
+                  }
+                });
+              }
             }
           }
         }

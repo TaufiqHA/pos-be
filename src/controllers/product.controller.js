@@ -164,16 +164,34 @@ const adjustStock = async (req, res) => {
       const product = await tx.product.findUnique({ where: { id: productId } });
       if (!product) throw new Error('Product not found');
       
-      const prevStock = product.stock;
-      const newStock = type === 'Tambah' ? prevStock + qty : prevStock - qty;
-
-      const updatedProduct = await tx.product.update({
-        where: { id: productId },
-        data: { stock: newStock },
-        include: { wholesalePrices: true }
-      });
-
       const user = await tx.user.findUnique({ where: { id: req.user.id } });
+      const isCabang = user && user.role === 'Cabang';
+
+      let prevStock;
+      let newStock;
+
+      if (isCabang) {
+        // Calculate current branch stock from its history
+        const history = await tx.stockHistory.findMany({
+          where: { productId, branchId: user.branchId }
+        });
+        const branchStock = history.reduce((sum, h) => {
+          return h.type === 'Tambah' ? sum + h.qty : sum - h.qty;
+        }, 0);
+        
+        prevStock = branchStock;
+        newStock = type === 'Tambah' ? prevStock + qty : prevStock - qty;
+
+        // DO NOT update product.stock in the database since it represents central stock
+      } else {
+        prevStock = product.stock;
+        newStock = type === 'Tambah' ? prevStock + qty : prevStock - qty;
+
+        await tx.product.update({
+          where: { id: productId },
+          data: { stock: newStock }
+        });
+      }
 
       await tx.stockHistory.create({
         data: {
@@ -189,7 +207,13 @@ const adjustStock = async (req, res) => {
         }
       });
 
-      return updatedProduct;
+      // Fetch the product again to return the updated state
+      const finalProduct = await tx.product.findUnique({
+        where: { id: productId },
+        include: { wholesalePrices: true }
+      });
+
+      return finalProduct;
     }, {
       maxWait: 5000,
       timeout: 20000
